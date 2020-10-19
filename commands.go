@@ -22,6 +22,7 @@ type CmdRegister struct {
 
 var (
 	sessionType = reflect.TypeOf(&discordgo.Session{})
+	messageEventType = reflect.TypeOf(&discordgo.MessageCreate{})
 	illegalKinds = map[reflect.Kind]bool{
 		reflect.Invalid: true,
 		reflect.Uintptr: true,
@@ -36,21 +37,30 @@ var (
 	}
 )
 
+/*
+ * TODO
+ * Handle()
+ * Cmd.fn also takes discordgo.MessageEvent
+ */
+
 func Command(fn interface{}, help string) (*Cmd, error) {
 	val := reflect.ValueOf(fn)
 	if kind := val.Kind(); kind != reflect.Func {
 		return nil, fmt.Errorf("Command: expected fn of kind Func, got %s", kind)
 	}
 	ttype := val.Type()
-	if ttype.NumIn() < 1 {
-		return nil, errors.New("Command: fn takes no arguments, expected 1 or more")
+	if ttype.NumIn() < 2 {
+		return nil, errors.New("Command: not enough arguments")
 	}
 	/* Can we compare pointer types like that? */
 	if first := ttype.In(0); first != sessionType {
 		return nil, errors.New("Command: fn's first argument is not a pointer to a discordgo.Session")
 	}
+	if snd := ttype.In(1); snd != messageEventType {
+		return nil, errors.New("Command: fn's second argument is not a pointer to a discordgo.MessageCreate")
+	}
 	var params []reflect.Type
-	for c := 1; c < ttype.NumIn(); c++ {
+	for c := 2; c < ttype.NumIn(); c++ {
 		param := ttype.In(c)
 		if kind := param.Kind(); illegalKinds[kind] {
 			return nil, fmt.Errorf("Command: argument of kind %s not supported", kind)
@@ -60,12 +70,12 @@ func Command(fn interface{}, help string) (*Cmd, error) {
 	return &Cmd{Help: help, fn: fn, paramTypes: params}, nil
 }
 
-func (cmd *Cmd) Invoke(s *discordgo.Session, args []string) error {
+func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []string) error {
 	if len(args) != len(cmd.paramTypes) {
 		return errors.New("Cmd.Invoke: argument-parameter count mismatch")
 	}
 	var vals []reflect.Value
-	vals = append(vals, reflect.ValueOf(s))
+	vals = append(vals, reflect.ValueOf(s), reflect.ValueOf(m))
 	for c := 0; c < len(args); c++ {
 		expect := cmd.paramTypes[c]
 		val, err := tryConvert(expect, args[c])
@@ -79,7 +89,7 @@ func (cmd *Cmd) Invoke(s *discordgo.Session, args []string) error {
 }
 
 func (reg *CmdRegister) Canon(name string) string {
-	canon := reg.Aliases(name)
+	canon := reg.Aliases[name]
 	if canon != "" {
 		return canon
 	}
@@ -98,13 +108,24 @@ func (reg *CmdRegister) Add(name string, cmd *Cmd) error {
 	return nil
 }
 
+func (reg *CmdRegister) Alias(name string, dest string) error {
+	if cmd := reg.Get(dest); cmd == nil {
+		return  fmt.Errorf("%s doesn't exist in register")
+	}
+	if cmd := reg.Get(name); cmd != nil {
+		return fmt.Errorf("%s already exists in register")
+	}
+	reg.Aliases[name] = dest
+	return nil
+}
+
 func tryConvert(ttype reflect.Type, str string) (reflect.Value, error) {
 	if ttype.Kind() == reflect.String {
 		return reflect.ValueOf(str), nil
 	}
 	/* 
 	 * from https://stackoverflow.com/questions/39891689/how-to-convert-a-string-value-to-the-correct-reflect-kind-in-go,
-	 * my original prototype was a huge swicth
+	 * my original prototype was a huge swich
 	 */
 	val := reflect.Zero(ttype)
 	err := json.Unmarshal([]byte(str), val.Addr().Interface())
