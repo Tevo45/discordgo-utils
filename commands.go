@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -19,6 +20,8 @@ type CmdRegister struct {
 	Cmds    map[string]*Cmd
 	Aliases map[string]string
 }
+
+type CmdErrorHandler func(*discordgo.Session, *discordgo.MessageCreate, error)
 
 var (
 	sessionType      = reflect.TypeOf(&discordgo.Session{})
@@ -70,13 +73,12 @@ func Command(fn interface{}, help string) (*Cmd, error) {
 }
 
 /* FIXME the name */
-func
-MustCommand(fn interface{}, help string) *Cmd {
+func MustCommand(fn interface{}, help string) *Cmd {
 	cmd, err := Command(fn, help)
 	if err != nil {
 		panic(err)
 	}
-	returrn cmd
+	return cmd
 }
 
 func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []string) error {
@@ -126,6 +128,29 @@ func (reg *CmdRegister) Alias(name string, dest string) error {
 	}
 	reg.Aliases[name] = dest
 	return nil
+}
+
+func (reg *CmdRegister) Handler(
+	pfx string,
+	errHandler CmdErrorHandler,
+) func(*discordgo.Session, *discordgo.MessageCreate) {
+	return func(s *discordgo.Session, msg *discordgo.MessageCreate) {
+		if msg.Author.ID == s.State.User.ID {
+			return
+		}
+		if strings.HasPrefix(msg.Content, pfx) {
+			args := strings.Split(msg.Content, " ")
+			str := args[0]
+			str = strings.Replace(str, pfx, "", 1)
+			cmd := reg.Get(str)
+			if cmd != nil {
+				err := cmd.Invoke(s, msg, args[1:])
+				if err != nil && errHandler != nil {
+					errHandler(s, msg, err)
+				}
+			}
+		}
+	}
 }
 
 func Register() *CmdRegister {
