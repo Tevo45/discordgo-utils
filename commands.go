@@ -69,6 +69,16 @@ func Command(fn interface{}, help string) (*Cmd, error) {
 	return &Cmd{Help: help, fn: fn, paramTypes: params}, nil
 }
 
+/* FIXME the name */
+func
+MustCommand(fn interface{}, help string) *Cmd {
+	cmd, err := Command(fn, help)
+	if err != nil {
+		panic(err)
+	}
+	returrn cmd
+}
+
 func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []string) error {
 	if len(args) != len(cmd.paramTypes) {
 		return errors.New("Cmd.Invoke: argument-parameter count mismatch")
