@@ -1,38 +1,38 @@
 package dgutils
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
-	"errors"
-	"encoding/json"
 
 	"github.com/bwmarrin/discordgo"
 )
 
 type Cmd struct {
-	Help string
-	fn interface{}
+	Help       string
+	fn         interface{}
 	paramTypes []reflect.Type
 }
 
 type CmdRegister struct {
-	Cmds map[string]*Cmd
+	Cmds    map[string]*Cmd
 	Aliases map[string]string
 }
 
 var (
-	sessionType = reflect.TypeOf(&discordgo.Session{})
+	sessionType      = reflect.TypeOf(&discordgo.Session{})
 	messageEventType = reflect.TypeOf(&discordgo.MessageCreate{})
-	illegalKinds = map[reflect.Kind]bool{
-		reflect.Invalid: true,
-		reflect.Uintptr: true,
-		reflect.Array: true,
-		reflect.Chan: true,
-		reflect.Func: true,
-		reflect.Interface: true,
-		reflect.Map: true,
-		reflect.Slice: true,
-		reflect.Struct: true,
+	illegalKinds     = map[reflect.Kind]bool{
+		reflect.Invalid:       true,
+		reflect.Uintptr:       true,
+		reflect.Array:         true,
+		reflect.Chan:          true,
+		reflect.Func:          true,
+		reflect.Interface:     true,
+		reflect.Map:           true,
+		reflect.Slice:         true,
+		reflect.Struct:        true,
 		reflect.UnsafePointer: true,
 	}
 )
@@ -40,7 +40,6 @@ var (
 /*
  * TODO
  * Handle()
- * Cmd.fn also takes discordgo.MessageEvent
  */
 
 func Command(fn interface{}, help string) (*Cmd, error) {
@@ -110,7 +109,7 @@ func (reg *CmdRegister) Add(name string, cmd *Cmd) error {
 
 func (reg *CmdRegister) Alias(name string, dest string) error {
 	if cmd := reg.Get(dest); cmd == nil {
-		return  fmt.Errorf("%s doesn't exist in register")
+		return fmt.Errorf("%s doesn't exist in register")
 	}
 	if cmd := reg.Get(name); cmd != nil {
 		return fmt.Errorf("%s already exists in register")
@@ -119,11 +118,18 @@ func (reg *CmdRegister) Alias(name string, dest string) error {
 	return nil
 }
 
+func Register() *CmdRegister {
+	return &CmdRegister{
+		Cmds:    map[string]*Cmd{},
+		Aliases: map[string]string{},
+	}
+}
+
 func tryConvert(ttype reflect.Type, str string) (reflect.Value, error) {
 	if ttype.Kind() == reflect.String {
 		return reflect.ValueOf(str), nil
 	}
-	/* 
+	/*
 	 * from https://stackoverflow.com/questions/39891689/how-to-convert-a-string-value-to-the-correct-reflect-kind-in-go,
 	 * my original prototype was a huge swich
 	 */
