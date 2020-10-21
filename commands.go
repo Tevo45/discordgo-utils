@@ -160,15 +160,19 @@ func Register() *CmdRegister {
 	}
 }
 
-func tryConvert(ttype reflect.Type, str string) (reflect.Value, error) {
+func tryConvert(ttype reflect.Type, str string) (val reflect.Value, err error) {
+	defer func() {
+		err = recover()
+	}()
 	if ttype.Kind() == reflect.String {
-		return reflect.ValueOf(str), nil
+		val = reflect.ValueOf(str)
+		return
 	}
 	/*
 	 * from https://stackoverflow.com/questions/39891689/how-to-convert-a-string-value-to-the-correct-reflect-kind-in-go,
 	 * my original prototype was a huge swich
 	 */
-	val := reflect.Zero(ttype)
-	err := json.Unmarshal([]byte(str), val.Addr().Interface())
-	return val, err
+	val = reflect.Zero(ttype)
+	err = json.Unmarshal([]byte(str), val.Addr().Interface())
+	return
 }
