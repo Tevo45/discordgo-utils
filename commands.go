@@ -162,7 +162,9 @@ func Register() *CmdRegister {
 
 func tryConvert(ttype reflect.Type, str string) (val reflect.Value, err error) {
 	defer func() {
-		err = recover()
+		if e := recover(); e != nil {
+			err = fmt.Errorf("tryConvert: %v", e)
+		}
 	}()
 	if ttype.Kind() == reflect.String {
 		val = reflect.ValueOf(str)
