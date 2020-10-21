@@ -174,7 +174,7 @@ func tryConvert(ttype reflect.Type, str string) (val reflect.Value, err error) {
 	 * from https://stackoverflow.com/questions/39891689/how-to-convert-a-string-value-to-the-correct-reflect-kind-in-go,
 	 * my original prototype was a huge swich
 	 */
-	val = reflect.Zero(ttype)
+	val = reflect.New(ttype).Elem()
 	err = json.Unmarshal([]byte(str), val.Addr().Interface())
 	return
 }
