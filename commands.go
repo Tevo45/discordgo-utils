@@ -121,10 +121,10 @@ func (reg *CmdRegister) Add(name string, cmd *Cmd) error {
 
 func (reg *CmdRegister) Alias(name string, dest string) error {
 	if cmd := reg.Get(dest); cmd == nil {
-		return fmt.Errorf("%s doesn't exist in register")
+		return fmt.Errorf("%s doesn't exist in register", name)
 	}
 	if cmd := reg.Get(name); cmd != nil {
-		return fmt.Errorf("%s already exists in register")
+		return fmt.Errorf("%s already exists in register", name)
 	}
 	reg.Aliases[name] = dest
 	return nil
