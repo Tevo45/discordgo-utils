@@ -40,7 +40,6 @@ var (
 		reflect.Slice:         true,
 		reflect.Struct:        true,
 		reflect.UnsafePointer: true,
-//		reflect.Ptr:           true,
 	}
 )
 
@@ -201,7 +200,7 @@ func tryConvert(s *discordgo.Session, ttype reflect.Type, str string) (val refle
 		 * We could try considering it as a name and looking it up,
 		 * not sure if it's worth the effort
 		 */
-		switch underlying := ttype.Elem(); underlying {
+		switch underlying := ttype.Elem(); ttype {
 		/* FIXME lots of repeated, really similar code */
 		case channelType:
 			var chann *discordgo.Channel
@@ -212,9 +211,10 @@ func tryConvert(s *discordgo.Session, ttype reflect.Type, str string) (val refle
 				chann, _ = s.Channel(str)
 			}
 			if chann == nil {
-				errors.New("tryConvert: cannot parse channel")
+				err = errors.New("tryConvert: cannot parse channel")
+			} else {
+				val = reflect.ValueOf(chann)
 			}
-			val = reflect.ValueOf(chann)
 		case userType:
 			var user *discordgo.User
 			var id uint64
@@ -224,9 +224,10 @@ func tryConvert(s *discordgo.Session, ttype reflect.Type, str string) (val refle
 				user, _ = s.User(str)
 			}
 			if user == nil {
-				errors.New("tryConvert: cannot parse user")
+				err = errors.New("tryConvert: cannot parse user")
+			} else {
+				val = reflect.ValueOf(user)
 			}
-			val = reflect.ValueOf(user)
 		default:
 			err = fmt.Errorf("tryConvert: can't unmarshal pointer to %s", underlying)
 		}
