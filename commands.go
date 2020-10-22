@@ -37,12 +37,14 @@ var (
 		reflect.Slice:         true,
 		reflect.Struct:        true,
 		reflect.UnsafePointer: true,
+		reflect.Ptr:           true,
 	}
 )
 
 /*
- * TODO
- * Handle()
+ * FIXME
+ * verify if we recover() everywhere a function can panic
+ * this is all really messy
  */
 
 func Command(fn interface{}, help string) (*Cmd, error) {
@@ -81,22 +83,36 @@ func MustCommand(fn interface{}, help string) *Cmd {
 	return cmd
 }
 
-func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []string) error {
+func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []string) (err error) {
+	/* Literally copy-pasted, but it needs to be a closure so err is in scope */
+	defer func() {
+		if e := recover(); e != nil {
+			err = fmt.Errorf("Invoke: %v", e)
+		}
+	}()
+
 	if len(args) != len(cmd.paramTypes) {
-		return errors.New("Cmd.Invoke: argument-parameter count mismatch")
+		err = errors.New("Cmd.Invoke: argument-parameter count mismatch")
+		return
 	}
+
 	var vals []reflect.Value
 	vals = append(vals, reflect.ValueOf(s), reflect.ValueOf(m))
 	for c := 0; c < len(args); c++ {
+		/* Need to declare this manually, := shadows err on the tryConvert call */
+		var val reflect.Value
+
 		expect := cmd.paramTypes[c]
-		val, err := tryConvert(expect, args[c])
+		val, err = tryConvert(expect, args[c])
+
 		if err != nil {
-			return err
+			return
 		}
+
 		vals = append(vals, val)
 	}
 	reflect.ValueOf(cmd.fn).Call(vals)
-	return nil
+	return
 }
 
 func (reg *CmdRegister) Canon(name string) string {
@@ -160,6 +176,7 @@ func Register() *CmdRegister {
 	}
 }
 
+/* TODO Support for discordgo types (members, channels, etc) */
 func tryConvert(ttype reflect.Type, str string) (val reflect.Value, err error) {
 	defer func() {
 		if e := recover(); e != nil {

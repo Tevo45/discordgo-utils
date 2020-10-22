@@ -1,15 +1,23 @@
 package dgutils
 
 import (
-	"testing"
 	"reflect"
+	"testing"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 func TestTryConvert(t *testing.T) {
-	// TODO Test for everything
+	/* TODO Test for wrong values as well */
+	valOf := reflect.ValueOf
 	vals := map[string]reflect.Value{
-		"8192": reflect.ValueOf(8192),
-		"yes": reflect.ValueOf("yes"),
+		"8192":      valOf(uint(8192)),         /* uint		*/
+		"-3":        valOf(-3),                 /* int		*/
+		"yes":       valOf("yes"),              /* string	*/
+		"true":      valOf(true),               /* bool		*/
+		"false":     valOf(false),              /*			*/
+		"2.3":       valOf(2.3),                /* float	*/
+		"3.1415926": valOf(float64(3.1415926)), /* double	*/
 	}
 	for str, val := range vals {
 		actual, err := tryConvert(val.Type(), str)
@@ -20,4 +28,15 @@ func TestTryConvert(t *testing.T) {
 			t.Errorf("expected '%v' but got '%v' for type '%s' (actual type: '%s')", val, actual, val.Type(), actual.Type())
 		}
 	}
+}
+
+func TestInvoke(t *testing.T) {
+	/* TODO Find a way to test discordgo types as well */
+	stub := MustCommand(
+		func(
+			s *discordgo.Session, m *discordgo.MessageCreate,
+			ui uint, i int, str string, b bool, f float32, d float64,
+		) {}, "Test function",
+	)
+	stub.Invoke(nil, nil, []string{"3", "-2", "hello", "true", "4.5", "3.1415926"})
 }
