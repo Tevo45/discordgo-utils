@@ -40,7 +40,7 @@ var (
 		reflect.Slice:         true,
 		reflect.Struct:        true,
 		reflect.UnsafePointer: true,
-		reflect.Ptr:           true,
+//		reflect.Ptr:           true,
 	}
 )
 
