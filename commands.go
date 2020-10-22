@@ -37,7 +37,7 @@ var (
 		reflect.Func:          true,
 		reflect.Interface:     true,
 		reflect.Map:           true,
-		reflect.Slice:         true,
+//		reflect.Slice:         true,
 		reflect.Struct:        true,
 		reflect.UnsafePointer: true,
 	}
@@ -50,7 +50,7 @@ var (
  *
  * TODO
  * have errors be their own type, so it's easier to handle
- * allow arrays as the last parameter of a command function
+ * support variadic functions
  */
 
 func Command(fn interface{}, help string) (*Cmd, error) {
@@ -74,6 +74,13 @@ func Command(fn interface{}, help string) (*Cmd, error) {
 		param := ttype.In(c)
 		if kind := param.Kind(); illegalKinds[kind] {
 			return nil, fmt.Errorf("Command: argument of kind %s not supported", kind)
+		} else if kind == reflect.Slice {
+			if c != ttype.NumIn()-1 {
+				return nil, errors.New("Command: slice can only be the last argument in a function")
+			}
+			if illegalKinds[param.Elem().Kind()] {
+				return nil, fmt.Errorf("Command: argument of kind %s not supported", kind)
+			}
 		}
 		params = append(params, param)
 	}
@@ -97,8 +104,11 @@ func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []
 		}
 	}()
 
-	if len(args) != len(cmd.paramTypes) {
-		err = fmt.Errorf("Cmd.Invoke: expected %d arguments, but got %d", len(args), len(cmd.paramTypes))
+	expectLen := len(cmd.paramTypes)
+	actualLen := len(args)
+	sliceReceiver := cmd.paramTypes[expectLen-1].Kind() == reflect.Slice
+	if actualLen < expectLen || (!sliceReceiver && actualLen > expectLen) {
+		err = fmt.Errorf("Cmd.Invoke: expected %d arguments, but got %d", expectLen, actualLen)
 		return
 	}
 
@@ -109,7 +119,20 @@ func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []
 		var val reflect.Value
 
 		expect := cmd.paramTypes[c]
-		val, err = tryConvert(s, expect, args[c])
+		if expect.Kind() == reflect.Slice {
+			sliceType := expect.Elem()
+			slice := reflect.New(expect)
+			for ; c < len(args); c++ {
+				val, err = tryConvert(s, sliceType, args[c])
+				if err != nil {
+					return
+				}
+				slice = reflect.Append(slice, val)
+			}
+			val = slice
+		} else {
+			val, err = tryConvert(s, expect, args[c])
+		}
 
 		if err != nil {
 			return
