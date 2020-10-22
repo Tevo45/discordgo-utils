@@ -42,7 +42,8 @@ func TestInvoke(t *testing.T) {
 		func(
 			s *discordgo.Session, m *discordgo.MessageCreate,
 			ui uint, i int, str string, b bool, f float32, d float64,
-		) {}, "Test function",
+		) {
+		}, "Test function",
 	)
 	stub.Invoke(nil, nil, []string{"3", "-2", "hello", "true", "4.5", "3.1415926"})
 }

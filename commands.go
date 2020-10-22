@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strings"
 	"strconv"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -27,8 +27,8 @@ type CmdErrorHandler func(*discordgo.Session, *discordgo.MessageCreate, error)
 var (
 	sessionType      = reflect.TypeOf(&discordgo.Session{})
 	messageEventType = reflect.TypeOf(&discordgo.MessageCreate{})
-	channelType		 = reflect.TypeOf(&discordgo.Channel{})
-	userType		 = reflect.TypeOf(&discordgo.User{})
+	channelType      = reflect.TypeOf(&discordgo.Channel{})
+	userType         = reflect.TypeOf(&discordgo.User{})
 	illegalKinds     = map[reflect.Kind]bool{
 		reflect.Invalid:       true,
 		reflect.Uintptr:       true,
@@ -161,7 +161,7 @@ func (reg *CmdRegister) Handler(
 			return
 		}
 		if strings.HasPrefix(msg.Content, pfx) {
-			args := strings.Split(msg.Content, " ")	/* FIXME this breaks args with spaces */
+			args := strings.Split(msg.Content, " ") /* FIXME this breaks args with spaces */
 			str := args[0]
 			str = strings.Replace(str, pfx, "", 1)
 			cmd := reg.Get(str)
@@ -193,7 +193,7 @@ func tryConvert(s *discordgo.Session, ttype reflect.Type, str string) (val refle
 	case reflect.String:
 		val = reflect.ValueOf(str)
 	case reflect.Ptr:
-		/* 
+		/*
 		 * For those, we first consider the string as a mention
 		 * failing that, we look it up as an id, and if it fails,
 		 * we give up
@@ -218,7 +218,7 @@ func tryConvert(s *discordgo.Session, ttype reflect.Type, str string) (val refle
 		case userType:
 			var user *discordgo.User
 			var id uint64
-			fmt.Sscanf(str, "<@%d>", &id)
+			fmt.Sscanf(str, "<@!%d>", &id)
 			user, _ = s.User(strconv.FormatUint(id, 10))
 			if user == nil {
 				user, _ = s.User(str)
