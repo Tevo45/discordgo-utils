@@ -99,7 +99,7 @@ func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []
 	}()
 
 	if len(args) != len(cmd.paramTypes) {
-		err = errors.New("Cmd.Invoke: argument-parameter count mismatch")
+		err = fmt.Errorf("Cmd.Invoke: expected %d arguments, but got %d", len(args), len(cmd.paramTypes))
 		return
 	}
 
