@@ -26,6 +26,8 @@ type CmdErrorHandler func(*discordgo.Session, *discordgo.MessageCreate, error)
 var (
 	sessionType      = reflect.TypeOf(&discordgo.Session{})
 	messageEventType = reflect.TypeOf(&discordgo.MessageCreate{})
+	channelType		 = reflect.TypeOf(&discordgo.Channel{})
+	userType		 = reflect.TypeOf(&discordgo.User{})
 	illegalKinds     = map[reflect.Kind]bool{
 		reflect.Invalid:       true,
 		reflect.Uintptr:       true,
@@ -45,6 +47,10 @@ var (
  * FIXME
  * verify if we recover() everywhere a function can panic
  * this is all really messy
+ *
+ * TODO
+ * have errors be their own type, so it's easier to handle
+ * allow arrays as the last parameter of a command function
  */
 
 func Command(fn interface{}, help string) (*Cmd, error) {
@@ -155,7 +161,7 @@ func (reg *CmdRegister) Handler(
 			return
 		}
 		if strings.HasPrefix(msg.Content, pfx) {
-			args := strings.Split(msg.Content, " ")
+			args := strings.Split(msg.Content, " ")	/* FIXME this breaks args with spaces */
 			str := args[0]
 			str = strings.Replace(str, pfx, "", 1)
 			cmd := reg.Get(str)
@@ -183,18 +189,56 @@ func tryConvert(ttype reflect.Type, str string) (val reflect.Value, err error) {
 			err = fmt.Errorf("tryConvert: %v", e)
 		}
 	}()
-	if ttype.Kind() == reflect.String {
+	switch ttype.Kind() {
+	case reflect.String:
 		val = reflect.ValueOf(str)
-		return
-	}
-	/*
-	 * from https://stackoverflow.com/questions/39891689/how-to-convert-a-string-value-to-the-correct-reflect-kind-in-go,
-	 * my original prototype was a huge swich
-	 */
-	val = reflect.New(ttype)
-	err = json.Unmarshal([]byte(str), val.Interface())
-	if err == nil {
-		val = val.Elem()
+	case reflect.Ptr:
+		/* 
+		 * For those, we first consider the string as a mention
+		 * failing that, we look it up as an id, and if it fails,
+		 * we give up
+		 * We could try considering it as a name and looking it up,
+		 * not sure if it's worth the effort
+		 */
+		switch underlying := ttype.Elem() {
+		/* FIXME lots of repeated, really similar code */
+		case channelType:
+			var chann discordgo.Channel
+			var id uint64
+			fmt.Sscanf(args[0], "<#%d>", &id)
+			chann, _ = s.Channel(strconv.FormatUint(id, 10))
+			if chann == nil {
+				chann, _ = s.Channel(args[0])
+			}
+			if chann == nil {
+				errors.New("tryConvert: cannot parse channel")
+			}
+			val = reflect.ValueOf(chann)
+		case userType:
+			var user discordgo.User
+			var id uint
+			fmt.Sscanf(args[0], "<@%d>", &id)
+			user, _ = s.User(strconv.FormatUint(id, 10))
+			if user == nil {
+				user, _ = s.User(args[0])
+			}
+			if user == nil {
+				errors.New("tryConvert: cannot parse user")
+			}
+			val = reflect.ValueOf(user)
+		default:
+			err = fmt.Errorf("tryConvert: can't unmarshal pointer to %s", underlying)
+		}
+	default:
+		/*
+		 * from https://stackoverflow.com/questions/39891689/how-to-convert-a-string-value-to-the-correct-reflect-kind-in-go,
+		 * my original prototype was a huge swich for every type
+		 */
+		val = reflect.New(ttype)
+		err = json.Unmarshal([]byte(str), val.Interface())
+		if err == nil {
+			val = val.Elem()
+		}
 	}
 	return
 }

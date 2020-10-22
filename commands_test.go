@@ -7,6 +7,12 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+/*
+ * TODO
+ * Register tests
+ * tests for errors and negative values
+ */
+
 func TestTryConvert(t *testing.T) {
 	/* TODO Test for wrong values as well */
 	valOf := reflect.ValueOf
