@@ -176,5 +176,8 @@ func tryConvert(ttype reflect.Type, str string) (val reflect.Value, err error) {
 	 */
 	val = reflect.New(ttype)
 	err = json.Unmarshal([]byte(str), val.Interface())
+	if err == nil {
+		val = val.Elem()
+	}
 	return
 }
