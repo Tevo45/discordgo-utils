@@ -26,7 +26,7 @@ func TestTryConvert(t *testing.T) {
 		"3.1415926": valOf(float64(3.1415926)), /* double	*/
 	}
 	for str, val := range vals {
-		actual, err := tryConvert(val.Type(), str)
+		actual, err := tryConvert(nil, val.Type(), str)
 		if err != nil {
 			t.Errorf("errored out for value '%v' of expected type '%s'", str, val.Type())
 		}

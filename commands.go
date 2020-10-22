@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"strconv"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -109,7 +110,7 @@ func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []
 		var val reflect.Value
 
 		expect := cmd.paramTypes[c]
-		val, err = tryConvert(expect, args[c])
+		val, err = tryConvert(s, expect, args[c])
 
 		if err != nil {
 			return
@@ -183,7 +184,7 @@ func Register() *CmdRegister {
 }
 
 /* TODO Support for discordgo types (members, channels, etc) */
-func tryConvert(ttype reflect.Type, str string) (val reflect.Value, err error) {
+func tryConvert(s *discordgo.Session, ttype reflect.Type, str string) (val reflect.Value, err error) {
 	defer func() {
 		if e := recover(); e != nil {
 			err = fmt.Errorf("tryConvert: %v", e)
@@ -200,27 +201,27 @@ func tryConvert(ttype reflect.Type, str string) (val reflect.Value, err error) {
 		 * We could try considering it as a name and looking it up,
 		 * not sure if it's worth the effort
 		 */
-		switch underlying := ttype.Elem() {
+		switch underlying := ttype.Elem(); underlying {
 		/* FIXME lots of repeated, really similar code */
 		case channelType:
-			var chann discordgo.Channel
+			var chann *discordgo.Channel
 			var id uint64
-			fmt.Sscanf(args[0], "<#%d>", &id)
+			fmt.Sscanf(str, "<#%d>", &id)
 			chann, _ = s.Channel(strconv.FormatUint(id, 10))
 			if chann == nil {
-				chann, _ = s.Channel(args[0])
+				chann, _ = s.Channel(str)
 			}
 			if chann == nil {
 				errors.New("tryConvert: cannot parse channel")
 			}
 			val = reflect.ValueOf(chann)
 		case userType:
-			var user discordgo.User
-			var id uint
-			fmt.Sscanf(args[0], "<@%d>", &id)
+			var user *discordgo.User
+			var id uint64
+			fmt.Sscanf(str, "<@%d>", &id)
 			user, _ = s.User(strconv.FormatUint(id, 10))
 			if user == nil {
-				user, _ = s.User(args[0])
+				user, _ = s.User(str)
 			}
 			if user == nil {
 				errors.New("tryConvert: cannot parse user")
