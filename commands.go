@@ -14,6 +14,8 @@ import (
 type Cmd struct {
 	Help       string
 	fn         interface{}
+	Predicate  CmdPredicate
+	ErrHandler CmdErrorHandler
 	paramTypes []reflect.Type
 }
 
@@ -22,7 +24,13 @@ type CmdRegister struct {
 	Aliases map[string]string
 }
 
+type CmdPredicate struct {
+	Permissions int
+	Custom      CmdPredicateFunc
+}
+
 type CmdErrorHandler func(*discordgo.Session, *discordgo.MessageCreate, error)
+type CmdPredicateFunc func(*discordgo.Session, *discordgo.MessageCreate, CmdPredicate) bool
 
 var (
 	sessionType      = reflect.TypeOf(&discordgo.Session{})
@@ -37,7 +45,6 @@ var (
 		reflect.Func:          true,
 		reflect.Interface:     true,
 		reflect.Map:           true,
-//		reflect.Slice:         true,
 		reflect.Struct:        true,
 		reflect.UnsafePointer: true,
 	}
@@ -53,7 +60,18 @@ var (
  * support variadic functions
  */
 
-func Command(fn interface{}, help string) (*Cmd, error) {
+//
+// Creates a command from a given function fn, with help as the help string,
+// and errHandler as an optional error handler.
+//
+// fn must have a *discordgo.Session as the first parameter, and *discordgo.MessageCreate
+// as the second. Later parameters are taken as command parameters, and are converted
+// automatically upon invocation. Valid parameter types include integer and float types,
+// string, bool and pointers to some discordgo types (User, Channel, Role and Member),
+// Arrays of supported types are accepted as the last argument of a function, and
+// will behave as if the command was a variadic function.
+//
+func Command(fn interface{}, help string, errHandler CmdErrorHandler) (*Cmd, error) {
 	val := reflect.ValueOf(fn)
 	if kind := val.Kind(); kind != reflect.Func {
 		return nil, fmt.Errorf("Command: expected fn of kind Func, got %s", kind)
@@ -84,25 +102,89 @@ func Command(fn interface{}, help string) (*Cmd, error) {
 		}
 		params = append(params, param)
 	}
-	return &Cmd{Help: help, fn: fn, paramTypes: params}, nil
+	return &Cmd{Help: help, fn: fn, paramTypes: params, ErrHandler: errHandler}, nil
 }
 
-/* FIXME the name */
-func MustCommand(fn interface{}, help string) *Cmd {
-	cmd, err := Command(fn, help)
+//
+// Same as Command, but also takes a predicate struct. Predicates may be used to limit
+// commands to users with certain permission levels, or perform additional validation
+// before executing a command.
+//
+func PredicatedCommand(
+	fn interface{},
+	help string,
+	errHandler CmdErrorHandler,
+	predicate CmdPredicate,
+) (cmd *Cmd, err error) {
+	cmd, err = Command(fn, help, errHandler)
+	if cmd != nil {
+		cmd.Predicate = predicate
+	}
+	return
+}
+
+//
+// Same as Command, but it panics if an error is encountered
+//
+func MustCommand(fn interface{}, help string, errHandler CmdErrorHandler) *Cmd {
+	cmd, err := Command(fn, help, errHandler)
 	if err != nil {
 		panic(err)
 	}
 	return cmd
 }
 
+//
+// Same as PredicatedCommand, but it panics if an error is encountered
+//
+func MustPredicatedCommand(
+	fn interface{},
+	help string,
+	errHandler CmdErrorHandler,
+	predicate CmdPredicate,
+) *Cmd {
+	cmd, err := PredicatedCommand(fn, help, errHandler, predicate)
+	if err != nil {
+		panic(err)
+	}
+	return cmd
+}
+
+//
+// Verifies whether the message m satisfies the predicate
+//
+func (p CmdPredicate) Validate(s *discordgo.Session, m *discordgo.MessageCreate) bool {
+	if p.Permissions != 0 {
+		owner, _ := IsOwner(s, m.GuildID, m.Author.ID)
+		perm, _ := MemberHasPermissions(s, m.GuildID, m.Author.ID, p.Permissions)
+		if !owner && !perm {
+			return false
+		}
+	}
+	if p.Custom != nil && p.Custom(s, m, p) {
+		return false
+	}
+	return true
+}
+
+//
+// Invokes the command based on message creation event m with arguments args.
+// Arguments are automatically parsed to their required type; an error is returned
+// if it can't be done. args should not contain the command name as it's first member,
+// but it might be empty if it is required.
+//
 func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []string) (err error) {
 	/* Literally copy-pasted, but it needs to be a closure so err is in scope */
 	defer func() {
 		if e := recover(); e != nil {
-			err = fmt.Errorf("Invoke: %v", e)
+			err = fmt.Errorf("Cmd.Invoke: %v", e)
 		}
 	}()
+
+	if !cmd.Predicate.Validate(s, m) {
+		err = fmt.Errorf("Cmd.Invoke: access denied")
+		return err
+	}
 
 	expectLen := len(cmd.paramTypes)
 	actualLen := len(args)
@@ -121,7 +203,7 @@ func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []
 		expect := cmd.paramTypes[c]
 		if expect.Kind() == reflect.Slice {
 			sliceType := expect.Elem()
-			slice := reflect.New(expect)
+			slice := reflect.New(expect).Elem()
 			for ; c < len(args); c++ {
 				val, err = tryConvert(s, sliceType, args[c])
 				if err != nil {
@@ -144,6 +226,9 @@ func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []
 	return
 }
 
+//
+// Returns the canonical name of a command
+//
 func (reg *CmdRegister) Canon(name string) string {
 	canon := reg.Aliases[name]
 	if canon != "" {
@@ -152,6 +237,10 @@ func (reg *CmdRegister) Canon(name string) string {
 	return name
 }
 
+//
+// Returns a commend in the register, or nil if the command doesn't exist
+// name might be a canon name or an alias
+//
 func (reg *CmdRegister) Get(name string) *Cmd {
 	return reg.Cmds[reg.Canon(name)]
 }
@@ -175,6 +264,12 @@ func (reg *CmdRegister) Alias(name string, dest string) error {
 	return nil
 }
 
+//
+// Returns a handler function, suitable to be used with discordgo.Session.AddHandler
+// pfx represents a prefix string for prefixed commands
+// errHandler is an optional error handler. If non-nil, it will be called when a command
+// returns an error when executing. It can be overriden on a per-command basis
+//
 func (reg *CmdRegister) Handler(
 	pfx string,
 	errHandler CmdErrorHandler,
@@ -190,14 +285,21 @@ func (reg *CmdRegister) Handler(
 			cmd := reg.Get(str)
 			if cmd != nil {
 				err := cmd.Invoke(s, msg, args[1:])
-				if err != nil && errHandler != nil {
-					errHandler(s, msg, err)
+				handler := errHandler
+				if cmd.ErrHandler != nil {
+					handler = cmd.ErrHandler
+				}
+				if err != nil && handler != nil {
+					handler(s, msg, err)
 				}
 			}
 		}
 	}
 }
 
+//
+// Creates an empty command register
+//
 func Register() *CmdRegister {
 	return &CmdRegister{
 		Cmds:    map[string]*Cmd{},
@@ -205,7 +307,9 @@ func Register() *CmdRegister {
 	}
 }
 
-/* TODO Support for discordgo types (members, channels, etc) */
+//
+// Attempts to parse str into the required type ttype, errors if it can't be done
+//
 func tryConvert(s *discordgo.Session, ttype reflect.Type, str string) (val reflect.Value, err error) {
 	defer func() {
 		if e := recover(); e != nil {
