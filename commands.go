@@ -11,7 +11,20 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-type Cmd struct {
+type Cmd interface {
+	Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []string) error
+	ErrorHandler() CmdErrorHandler
+}
+
+//
+// Command backed by a Go function. Arguments are reflected and automatically
+// converted at runtime.
+// Predicate is an optional CmdPredicate struct describing in which conditions
+// the command may be executed.
+// ErrHandler is an optional error handling function that may be invoked in
+// case the command fails to be invoked.
+//
+type FnCmd struct {
 	Help       string
 	fn         interface{}
 	Predicate  CmdPredicate
@@ -20,10 +33,17 @@ type Cmd struct {
 }
 
 type CmdRegister struct {
-	Cmds    map[string]*Cmd
+	Cmds    map[string]Cmd
 	Aliases map[string]string
 }
 
+//
+// Describes in which condition a command may be executed.
+// Permissions is a bitfield describing necessary user premissions for
+// invoking the command.
+// Custom is a function that can be used to check for logic not directly
+// implemented by a predicate.
+//
 type CmdPredicate struct {
 	Permissions int
 	Custom      CmdPredicateFunc
@@ -72,7 +92,7 @@ var (
 // Arrays of supported types are accepted as the last argument of a function, and
 // will behave as if the command was a variadic function.
 //
-func Command(fn interface{}, help string, errHandler CmdErrorHandler) (*Cmd, error) {
+func Command(fn interface{}, help string, errHandler CmdErrorHandler) (*FnCmd, error) {
 	val := reflect.ValueOf(fn)
 	if kind := val.Kind(); kind != reflect.Func {
 		return nil, fmt.Errorf("Command: expected fn of kind Func, got %s", kind)
@@ -103,7 +123,7 @@ func Command(fn interface{}, help string, errHandler CmdErrorHandler) (*Cmd, err
 		}
 		params = append(params, param)
 	}
-	return &Cmd{Help: help, fn: fn, paramTypes: params, ErrHandler: errHandler}, nil
+	return &FnCmd{Help: help, fn: fn, paramTypes: params, ErrHandler: errHandler}, nil
 }
 
 //
@@ -116,7 +136,7 @@ func PredicatedCommand(
 	help string,
 	errHandler CmdErrorHandler,
 	predicate CmdPredicate,
-) (cmd *Cmd, err error) {
+) (cmd *FnCmd, err error) {
 	cmd, err = Command(fn, help, errHandler)
 	if cmd != nil {
 		cmd.Predicate = predicate
@@ -127,7 +147,7 @@ func PredicatedCommand(
 //
 // Same as Command, but it panics if an error is encountered
 //
-func MustCommand(fn interface{}, help string, errHandler CmdErrorHandler) *Cmd {
+func MustCommand(fn interface{}, help string, errHandler CmdErrorHandler) *FnCmd {
 	cmd, err := Command(fn, help, errHandler)
 	if err != nil {
 		panic(err)
@@ -143,7 +163,7 @@ func MustPredicatedCommand(
 	help string,
 	errHandler CmdErrorHandler,
 	predicate CmdPredicate,
-) *Cmd {
+) *FnCmd {
 	cmd, err := PredicatedCommand(fn, help, errHandler, predicate)
 	if err != nil {
 		panic(err)
@@ -168,13 +188,17 @@ func (p CmdPredicate) Validate(s *discordgo.Session, m *discordgo.MessageCreate)
 	return true
 }
 
+func (cmd *FnCmd) ErrorHandler() CmdErrorHandler {
+	return cmd.ErrHandler
+}
+
 //
 // Invokes the command based on message creation event m with arguments args.
 // Arguments are automatically parsed to their required type; an error is returned
 // if it can't be done. args should not contain the command name as it's first member,
 // but it might be empty if it is required.
 //
-func (cmd *Cmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []string) (err error) {
+func (cmd *FnCmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args []string) (err error) {
 	/* Literally copy-pasted, but it needs to be a closure so err is in scope */
 	defer func() {
 		if e := recover(); e != nil {
@@ -242,11 +266,11 @@ func (reg *CmdRegister) Canon(name string) string {
 // Returns a commend in the register, or nil if the command doesn't exist
 // name might be a canon name or an alias
 //
-func (reg *CmdRegister) Get(name string) *Cmd {
+func (reg *CmdRegister) Get(name string) Cmd {
 	return reg.Cmds[reg.Canon(name)]
 }
 
-func (reg *CmdRegister) Add(name string, cmd *Cmd) error {
+func (reg *CmdRegister) Add(name string, cmd Cmd) error {
 	if cur := reg.Get(name); cur != nil {
 		return fmt.Errorf("CmdRegister.Add: command %s already exists in register", name)
 	}
@@ -275,6 +299,7 @@ func (reg *CmdRegister) Handle(
 	s *discordgo.Session,
 	msg *discordgo.MessageCreate,
 	pfx string,
+	errHandler CmdErrorHandler,
 ) {
 	if msg.Author.ID == s.State.User.ID {
 		return
@@ -287,8 +312,8 @@ func (reg *CmdRegister) Handle(
 		if cmd != nil {
 			err := cmd.Invoke(s, msg, args[1:])
 			handler := errHandler
-			if cmd.ErrHandler != nil {
-				handler = cmd.ErrHandler
+			if cmdHandler := cmd.ErrorHandler(); cmdHandler != nil {
+				handler = cmdHandler
 			}
 			if err != nil && handler != nil {
 				handler(s, msg, err)
@@ -317,7 +342,7 @@ func (reg *CmdRegister) Handler(
 //
 func Register() *CmdRegister {
 	return &CmdRegister{
-		Cmds:    map[string]*Cmd{},
+		Cmds:    map[string]Cmd{},
 		Aliases: map[string]string{},
 	}
 }
