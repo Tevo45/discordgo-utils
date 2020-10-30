@@ -58,6 +58,7 @@ var (
  * TODO
  * have errors be their own type, so it's easier to handle
  * support variadic functions
+ * make cmd a interface
  */
 
 //
@@ -265,6 +266,38 @@ func (reg *CmdRegister) Alias(name string, dest string) error {
 }
 
 //
+// Handles commands in the context of this register
+// pfx represents a prefix string for prefixed commands
+// errHandler is an optional error handler. If non-nil, it will be called when a command
+// returns an error when executing. It can be overriden on a per-command basis
+//
+func (reg *CmdRegister) Handle(
+	s *discordgo.Session,
+	msg *discordgo.MessageCreate,
+	pfx string,
+) {
+	if msg.Author.ID == s.State.User.ID {
+		return
+	}
+	if strings.HasPrefix(msg.Content, pfx) {
+		args := strings.Split(msg.Content, " ") /* FIXME this breaks args with spaces */
+		str := args[0]
+		str = strings.Replace(str, pfx, "", 1)
+		cmd := reg.Get(str)
+		if cmd != nil {
+			err := cmd.Invoke(s, msg, args[1:])
+			handler := errHandler
+			if cmd.ErrHandler != nil {
+				handler = cmd.ErrHandler
+			}
+			if err != nil && handler != nil {
+				handler(s, msg, err)
+			}
+		}
+	}
+}
+
+//
 // Returns a handler function, suitable to be used with discordgo.Session.AddHandler
 // pfx represents a prefix string for prefixed commands
 // errHandler is an optional error handler. If non-nil, it will be called when a command
@@ -275,25 +308,7 @@ func (reg *CmdRegister) Handler(
 	errHandler CmdErrorHandler,
 ) func(*discordgo.Session, *discordgo.MessageCreate) {
 	return func(s *discordgo.Session, msg *discordgo.MessageCreate) {
-		if msg.Author.ID == s.State.User.ID {
-			return
-		}
-		if strings.HasPrefix(msg.Content, pfx) {
-			args := strings.Split(msg.Content, " ") /* FIXME this breaks args with spaces */
-			str := args[0]
-			str = strings.Replace(str, pfx, "", 1)
-			cmd := reg.Get(str)
-			if cmd != nil {
-				err := cmd.Invoke(s, msg, args[1:])
-				handler := errHandler
-				if cmd.ErrHandler != nil {
-					handler = cmd.ErrHandler
-				}
-				if err != nil && handler != nil {
-					handler(s, msg, err)
-				}
-			}
-		}
+		reg.Handle(s, msg, pfx, errHandler)
 	}
 }
 
