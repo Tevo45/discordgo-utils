@@ -207,15 +207,15 @@ func (cmd *FnCmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args 
 	}()
 
 	if !cmd.Predicate.Validate(s, m) {
-		err = fmt.Errorf("Cmd.Invoke: access denied")
-		return err
+		err = AccessDenied{}
+		return
 	}
 
 	expectLen := len(cmd.paramTypes)
 	actualLen := len(args)
 	sliceReceiver := cmd.paramTypes[expectLen-1].Kind() == reflect.Slice
 	if actualLen < expectLen || (!sliceReceiver && actualLen > expectLen) {
-		err = fmt.Errorf("Cmd.Invoke: expected %d arguments, but got %d", expectLen, actualLen)
+		err = ArgCountMismatch{expectLen, actualLen}
 		return
 	}
 
@@ -353,7 +353,7 @@ func Register() *CmdRegister {
 func tryConvert(s *discordgo.Session, ttype reflect.Type, str string) (val reflect.Value, err error) {
 	defer func() {
 		if e := recover(); e != nil {
-			err = fmt.Errorf("tryConvert: %v", e)
+			err = UnmarshalError{fmt.Errorf("tryConvert: %v", e)}
 		}
 	}()
 	switch ttype.Kind() {
@@ -378,7 +378,7 @@ func tryConvert(s *discordgo.Session, ttype reflect.Type, str string) (val refle
 				chann, _ = s.Channel(str)
 			}
 			if chann == nil {
-				err = errors.New("tryConvert: cannot parse channel")
+				err = UnmarshalError{errors.New("tryConvert: cannot parse channel")}
 			} else {
 				val = reflect.ValueOf(chann)
 			}
@@ -391,12 +391,14 @@ func tryConvert(s *discordgo.Session, ttype reflect.Type, str string) (val refle
 				user, _ = s.User(str)
 			}
 			if user == nil {
-				err = errors.New("tryConvert: cannot parse user")
+				err = UnmarshalError{errors.New("tryConvert: cannot parse user")}
 			} else {
 				val = reflect.ValueOf(user)
 			}
 		default:
-			err = fmt.Errorf("tryConvert: can't unmarshal pointer to %s", underlying)
+			err = UnmarshalError{
+				fmt.Errorf("tryConvert: can't unmarshal pointer to %s", underlying),
+			}
 		}
 	default:
 		/*
@@ -407,6 +409,8 @@ func tryConvert(s *discordgo.Session, ttype reflect.Type, str string) (val refle
 		err = json.Unmarshal([]byte(str), val.Interface())
 		if err == nil {
 			val = val.Elem()
+		} else {
+			err = UnmarshalError{err}
 		}
 	}
 	return
