@@ -214,7 +214,10 @@ func (cmd *FnCmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args 
 
 	expectLen := len(cmd.paramTypes)
 	actualLen := len(args)
-	sliceReceiver := cmd.paramTypes[expectLen-1].Kind() == reflect.Slice
+	sliceReceiver := false
+	if expectLen > 0 {
+		sliceReceiver = cmd.paramTypes[expectLen-1].Kind() == reflect.Slice
+	}
 	if sliceReceiver {
 		expectLen--
 	}
