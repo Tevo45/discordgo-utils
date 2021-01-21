@@ -79,6 +79,7 @@ var (
  * have errors be their own type, so it's easier to handle
  * support variadic functions
  * make cmd a interface
+ * not be a mess
  */
 
 //
@@ -214,6 +215,9 @@ func (cmd *FnCmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args 
 	expectLen := len(cmd.paramTypes)
 	actualLen := len(args)
 	sliceReceiver := cmd.paramTypes[expectLen-1].Kind() == reflect.Slice
+	if sliceReceiver {
+		expectLen--
+	}
 	if actualLen < expectLen || (!sliceReceiver && actualLen > expectLen) {
 		err = ArgCountMismatch{expectLen, actualLen}
 		return
@@ -221,7 +225,7 @@ func (cmd *FnCmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args 
 
 	var vals []reflect.Value
 	vals = append(vals, reflect.ValueOf(s), reflect.ValueOf(m))
-	for c := 0; c < len(args); c++ {
+	for c := 0; c < len(cmd.paramTypes); c++ {
 		/* Need to declare this manually, := shadows err on the tryConvert call */
 		var val reflect.Value
 
@@ -247,6 +251,7 @@ func (cmd *FnCmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args 
 
 		vals = append(vals, val)
 	}
+
 	reflect.ValueOf(cmd.fn).Call(vals)
 	return
 }
