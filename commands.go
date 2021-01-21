@@ -32,7 +32,7 @@ type FnCmd struct {
 	paramTypes []reflect.Type
 }
 
-type CmdRegister struct {
+type CmdRegistry struct {
 	Cmds    map[string]Cmd
 	Aliases map[string]string
 }
@@ -254,7 +254,7 @@ func (cmd *FnCmd) Invoke(s *discordgo.Session, m *discordgo.MessageCreate, args 
 //
 // Returns the canonical name of a command
 //
-func (reg *CmdRegister) Canon(name string) string {
+func (reg *CmdRegistry) Canon(name string) string {
 	canon := reg.Aliases[name]
 	if canon != "" {
 		return canon
@@ -266,19 +266,19 @@ func (reg *CmdRegister) Canon(name string) string {
 // Returns a commend in the register, or nil if the command doesn't exist
 // name might be a canon name or an alias
 //
-func (reg *CmdRegister) Get(name string) Cmd {
+func (reg *CmdRegistry) Get(name string) Cmd {
 	return reg.Cmds[reg.Canon(name)]
 }
 
-func (reg *CmdRegister) Add(name string, cmd Cmd) error {
+func (reg *CmdRegistry) Add(name string, cmd Cmd) error {
 	if cur := reg.Get(name); cur != nil {
-		return fmt.Errorf("CmdRegister.Add: command %s already exists in register", name)
+		return fmt.Errorf("CmdRegistry.Add: command %s already exists in register", name)
 	}
 	reg.Cmds[name] = cmd
 	return nil
 }
 
-func (reg *CmdRegister) Alias(name string, dest string) error {
+func (reg *CmdRegistry) Alias(name string, dest string) error {
 	if cmd := reg.Get(dest); cmd == nil {
 		return fmt.Errorf("%s doesn't exist in register", name)
 	}
@@ -295,7 +295,7 @@ func (reg *CmdRegister) Alias(name string, dest string) error {
 // errHandler is an optional error handler. If non-nil, it will be called when a command
 // returns an error when executing. It can be overriden on a per-command basis
 //
-func (reg *CmdRegister) Handle(
+func (reg *CmdRegistry) Handle(
 	s *discordgo.Session,
 	msg *discordgo.MessageCreate,
 	pfx string,
@@ -328,7 +328,7 @@ func (reg *CmdRegister) Handle(
 // errHandler is an optional error handler. If non-nil, it will be called when a command
 // returns an error when executing. It can be overriden on a per-command basis
 //
-func (reg *CmdRegister) Handler(
+func (reg *CmdRegistry) Handler(
 	pfx string,
 	errHandler CmdErrorHandler,
 ) func(*discordgo.Session, *discordgo.MessageCreate) {
@@ -340,8 +340,8 @@ func (reg *CmdRegister) Handler(
 //
 // Creates an empty command register
 //
-func Register() *CmdRegister {
-	return &CmdRegister{
+func Registry() *CmdRegistry {
+	return &CmdRegistry{
 		Cmds:    map[string]Cmd{},
 		Aliases: map[string]string{},
 	}

@@ -9,7 +9,7 @@ import (
 
 /*
  * TODO
- * Register tests
+ * Registry tests
  * tests for errors and negative values
  */
 
