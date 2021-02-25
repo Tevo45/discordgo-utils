@@ -41,11 +41,14 @@ type CmdRegistry struct {
 // Describes in which condition a command may be executed.
 // Permissions is a bitfield describing necessary user premissions for
 // invoking the command.
+// AdministratorOverrides defines whether a member having Adminstrator
+// permission should bypass the predicate
 // Custom is a function that can be used to check for logic not directly
 // implemented by a predicate.
 //
 type CmdPredicate struct {
 	Permissions int
+	AdministratorOverrides bool
 	Custom      CmdPredicateFunc
 }
 
@@ -180,7 +183,8 @@ func (p CmdPredicate) Validate(s *discordgo.Session, m *discordgo.MessageCreate)
 		owner, _ := IsOwner(s, m.GuildID, m.Author.ID)
 		perm, _ := MemberHasPermissions(s, m.GuildID, m.Author.ID, p.Permissions)
 		if !owner && !perm {
-			return false
+			admin, _ := MemberHasPermissions(s, m.GuildID, m.Author.ID, discordgo.PermissionAdministrator)
+			return p.AdministratorOverrides && admin
 		}
 	}
 	if p.Custom != nil && p.Custom(s, m, p) {
